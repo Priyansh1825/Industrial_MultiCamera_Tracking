@@ -1,0 +1,47 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+agri_env/
+ENV/
+.env
+.env.local
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ML Model Checkpoints & Large Data
+*.pth
+*.pt
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.onnx
+*.weights
+*.bin
+*.ckpt
+*.tflite
+*.pb
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Node & IDE
+node_modules/
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+
+# Custom Project Ignores
+data/
+output/
+*.mp4
+*.avi

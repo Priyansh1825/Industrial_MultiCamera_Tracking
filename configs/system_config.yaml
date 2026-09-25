@@ -1,0 +1,115 @@
+# ==============================================================================
+# INDUSTRIAL MULTI-CAMERA TRACKING SYSTEM CONFIGURATION (MTMCT)
+# ==============================================================================
+
+system:
+  environment: industrial_plant_floor
+  log_level: INFO
+  inference_device: cuda:0
+  tensorrt_enabled: true
+  fp16_precision: true
+
+camera_network:
+  total_cameras: 12
+  entry_camera_ids: [CAM_01_GATE_NORTH, CAM_02_GATE_SOUTH]
+  rtsp_streams:
+    - id: CAM_01
+      name: Main Entrance Gate
+      rtsp_url: rtsp://admin:pass@192.168.1.101:554/live/main
+      fps: 25
+      resolution: [1920, 1080]
+      homography_matrix: [
+        [0.0034, 0.0001, -2.14],
+        [0.00005, 0.0042, -1.88],
+        [0.000001, 0.00002, 1.0]
+      ]
+      adjacent_cameras: [CAM_02, CAM_03]
+      transition_time_bounds:
+        CAM_02: { min_seconds: 3.5, max_seconds: 25.0 }
+        CAM_03: { min_seconds: 8.0, max_seconds: 45.0 }
+
+    - id: CAM_02
+      name: Aisle West Processing
+      rtsp_url: rtsp://admin:pass@192.168.1.102:554/live/main
+      fps: 25
+      resolution: [1920, 1080]
+      adjacent_cameras: [CAM_01, CAM_04]
+      transition_time_bounds:
+        CAM_01: { min_seconds: 3.5, max_seconds: 25.0 }
+        CAM_04: { min_seconds: 5.0, max_seconds: 35.0 }
+
+models:
+  detection:
+    framework: PyTorch / TensorRT
+    model_path: weights/yolov11x_factory_custom.engine
+    confidence_threshold: 0.45
+    nms_iou_threshold: 0.50
+    classes:
+      0: person
+      1: vessel_chemical_tank
+      2: forklift
+      3: pallet_jack
+
+  single_camera_tracking:
+    algorithm: ByteTrack
+    track_thresh: 0.50
+    track_buffer: 60
+    match_thresh: 0.80
+
+  reid_feature_extraction:
+    person_model: weights/osnet_ibn_x1_0_market1501_factory.onnx
+    vessel_model: weights/custom_contrastive_vessel_reid.onnx
+    embedding_dimension: 512
+    distance_metric: cosine
+    similarity_threshold: 0.72
+
+mtmct_engine:
+  global_matching_window_sec: 180
+  spatial_consistency_weight: 0.40
+  appearance_consistency_weight: 0.60
+  max_velocity_mps: 2.5 # max human walking speed / vessel towing speed
+
+databases:
+  vector_db:
+    type: milvus
+    host: 127.0.0.1
+    port: 19530
+    collection_name: factory_reid_embeddings
+  spatial_db:
+    type: timescaledb_postgis
+    connection_string: postgresql://factory_ai:secret@127.0.0.1:5432/spatial_tracking
+  message_broker:
+    type: redis_pubsub
+    host: 127.0.0.1
+    port: 6379
+
+simulation:
+  enabled: true
+  plant_dimensions_meters: [40.0, 25.0]
+  fps: 25
+  virtual_cameras:
+    - id: CAM_01_GATE_NORTH
+      name: Main North Entrance Gate
+      pos_3d: [2.0, 1.5, 5.5]
+      target_3d: [7.5, 8.0, 0.0]
+      fov_deg: 75.0
+      resolution: [1280, 720]
+    - id: CAM_02_AISLE_WEST
+      name: Aisle West Processing Corridor
+      pos_3d: [2.0, 23.5, 5.8]
+      target_3d: [7.0, 15.0, 0.0]
+      fov_deg: 72.0
+      resolution: [1280, 720]
+    - id: CAM_03_REACTOR_BAY
+      name: Chemical Reactor & Agitation Bay
+      pos_3d: [26.0, 2.0, 6.2]
+      target_3d: [20.0, 9.0, 0.0]
+      fov_deg: 74.0
+      resolution: [1280, 720]
+    - id: CAM_04_LOADING_DOCK
+      name: South Loading & Logistics Dock
+      pos_3d: [38.0, 23.5, 6.0]
+      target_3d: [32.0, 13.0, 0.0]
+      fov_deg: 75.0
+      resolution: [1280, 720]
+
