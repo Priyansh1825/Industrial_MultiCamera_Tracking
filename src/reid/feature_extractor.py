@@ -4,41 +4,68 @@ Deep Re-Identification (Re-ID) Feature Extractor for Factory Personnel and Asset
 Extracts normalized L2 feature embeddings (e.g. 512-dim) from cropped bounding boxes.
 Supports ONNX / PyTorch models with fallback to a spatial-color descriptor when external weights are absent.
 """
+from pathlib import Path
 from typing import List, Optional, Union
 import cv2
 import numpy as np
+
+from src.config_loader import config
 
 
 class ReIDFeatureExtractor:
     """
     Extracts L2-normalized feature embeddings from object bounding box crops.
+    Supports separate models for person and vessel classes.
     """
     def __init__(
         self,
         model_path: Optional[str] = None,
         embedding_dim: int = 512,
-        input_size: tuple = (256, 128)  # (height, width)
+        input_size: tuple = (256, 128),  # (height, width)
     ):
-        self.model_path = model_path
         self.embedding_dim = embedding_dim
         self.input_size = input_size
-        self.session = None
+        self.person_session = None
+        self.vessel_session = None
 
-        if model_path:
-            self._load_onnx_model(model_path)
+        # Try loading models from config
+        reid_cfg = config.get_reid()
+        person_model = reid_cfg.person_model
+        vessel_model = reid_cfg.vessel_model
 
-    def _load_onnx_model(self, path: str):
+        # Check if model files exist
+        person_path = Path(person_model) if person_model else None
+        vessel_path = Path(vessel_model) if vessel_model else None
+
+        if person_path and person_path.exists():
+            self._load_onnx_model(person_path, "person")
+        else:
+            print(f"[ReID] Person model not found at {person_path}. Using fallback.")
+
+        if vessel_path and vessel_path.exists():
+            self._load_onnx_model(vessel_path, "vessel")
+        else:
+            print(f"[ReID] Vessel model not found at {vessel_path}. Using fallback.")
+
+        # If no model_path provided and config models not found, try the legacy model_path
+        if model_path and (self.person_session is None and self.vessel_session is None):
+            self._load_onnx_model(Path(model_path), "person")
+
+    def _load_onnx_model(self, path: Path, model_type: str):
         """Attempts to load ONNX runtime inference session."""
         try:
             import onnxruntime as ort
-            self.session = ort.InferenceSession(
-                path,
+            session = ort.InferenceSession(
+                str(path),
                 providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
             )
-            print(f"[ReID] Successfully loaded ONNX model from {path}")
+            if model_type == "person":
+                self.person_session = session
+            else:
+                self.vessel_session = session
+            print(f"[ReID] Successfully loaded {model_type} ONNX model from {path}")
         except Exception as e:
-            print(f"[ReID] ONNX model load skipped or failed ({e}). Using spatial feature extractor.")
-            self.session = None
+            print(f"[ReID] {model_type} ONNX model load failed ({e}). Using spatial feature extractor.")
 
     def preprocess_crop(self, crop: np.ndarray) -> np.ndarray:
         """Resizes, converts to RGB, and standardizes image crop for model input."""
@@ -128,16 +155,19 @@ class ReIDFeatureExtractor:
             extended = extended / norm
         return extended.astype(np.float32)
 
-    def extract(self, crop: np.ndarray) -> np.ndarray:
+    def extract(self, crop: np.ndarray, class_name: str = "person") -> np.ndarray:
         """Extracts single L2-normalized embedding vector from a cropped box."""
         if crop.size == 0:
             return np.zeros(self.embedding_dim, dtype=np.float32)
 
-        if self.session is not None:
+        # Select appropriate session based on class
+        session = self.person_session if class_name == "person" else self.vessel_session
+
+        if session is not None:
             try:
                 input_tensor = self.preprocess_crop(crop)
-                input_name = self.session.get_inputs()[0].name
-                raw_emb = self.session.run(None, {input_name: input_tensor})[0].flatten()
+                input_name = session.get_inputs()[0].name
+                raw_emb = session.run(None, {input_name: input_tensor})[0].flatten()
                 norm = np.linalg.norm(raw_emb)
                 if norm > 1e-6:
                     return (raw_emb / norm).astype(np.float32)
@@ -147,11 +177,14 @@ class ReIDFeatureExtractor:
 
         return self.extract_fallback_embedding(crop)
 
-    def extract_batch(self, frame: np.ndarray, bboxes: List[Union[tuple, list]]) -> List[np.ndarray]:
+    def extract_batch(self, frame: np.ndarray, bboxes: List[Union[tuple, list]], class_names: Optional[List[str]] = None) -> List[np.ndarray]:
         """Extracts embeddings for multiple bounding boxes from a single video frame."""
         h_frame, w_frame = frame.shape[:2]
         embeddings = []
-        for box in bboxes:
+        if class_names is None:
+            class_names = ["person"] * len(bboxes)
+
+        for box, cls_name in zip(bboxes, class_names):
             x1, y1, x2, y2 = [int(v) for v in box]
             x1 = max(0, min(w_frame - 1, x1))
             y1 = max(0, min(h_frame - 1, y1))
@@ -159,7 +192,7 @@ class ReIDFeatureExtractor:
             y2 = max(y1 + 1, min(h_frame, y2))
 
             crop = frame[y1:y2, x1:x2]
-            embeddings.append(self.extract(crop))
+            embeddings.append(self.extract(crop, cls_name))
         return embeddings
 
 

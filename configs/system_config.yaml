@@ -10,33 +10,68 @@ system:
   fp16_precision: true
 
 camera_network:
-  total_cameras: 12
-  entry_camera_ids: [CAM_01_GATE_NORTH, CAM_02_GATE_SOUTH]
+  total_cameras: 4
+  entry_camera_ids: [CAM_01_GATE_NORTH, CAM_04_LOADING_DOCK]
   rtsp_streams:
-    - id: CAM_01
-      name: Main Entrance Gate
+    - id: CAM_01_GATE_NORTH
+      name: Main North Entrance Gate
       rtsp_url: rtsp://admin:pass@192.168.1.101:554/live/main
       fps: 25
-      resolution: [1920, 1080]
+      resolution: [1280, 720]
       homography_matrix: [
         [0.0034, 0.0001, -2.14],
         [0.00005, 0.0042, -1.88],
         [0.000001, 0.00002, 1.0]
       ]
-      adjacent_cameras: [CAM_02, CAM_03]
+      adjacent_cameras: [CAM_02_AISLE_WEST, CAM_03_REACTOR_BAY]
       transition_time_bounds:
-        CAM_02: { min_seconds: 3.5, max_seconds: 25.0 }
-        CAM_03: { min_seconds: 8.0, max_seconds: 45.0 }
+        CAM_02_AISLE_WEST: { min_seconds: 3.5, max_seconds: 25.0 }
+        CAM_03_REACTOR_BAY: { min_seconds: 8.0, max_seconds: 45.0 }
 
-    - id: CAM_02
-      name: Aisle West Processing
+    - id: CAM_02_AISLE_WEST
+      name: Aisle West Processing Corridor
       rtsp_url: rtsp://admin:pass@192.168.1.102:554/live/main
       fps: 25
-      resolution: [1920, 1080]
-      adjacent_cameras: [CAM_01, CAM_04]
+      resolution: [1280, 720]
+      homography_matrix: [
+        [0.0028, -0.0002, -1.95],
+        [0.00003, 0.0038, -2.10],
+        [0.000001, 0.00002, 1.0]
+      ]
+      adjacent_cameras: [CAM_01_GATE_NORTH, CAM_04_LOADING_DOCK]
       transition_time_bounds:
-        CAM_01: { min_seconds: 3.5, max_seconds: 25.0 }
-        CAM_04: { min_seconds: 5.0, max_seconds: 35.0 }
+        CAM_01_GATE_NORTH: { min_seconds: 3.5, max_seconds: 25.0 }
+        CAM_04_LOADING_DOCK: { min_seconds: 5.0, max_seconds: 35.0 }
+
+    - id: CAM_03_REACTOR_BAY
+      name: Chemical Reactor & Agitation Bay
+      rtsp_url: rtsp://admin:pass@192.168.1.103:554/live/main
+      fps: 25
+      resolution: [1280, 720]
+      homography_matrix: [
+        [0.0031, 0.0001, -3.20],
+        [-0.00004, 0.0040, -1.50],
+        [0.000001, 0.00002, 1.0]
+      ]
+      adjacent_cameras: [CAM_01_GATE_NORTH, CAM_04_LOADING_DOCK]
+      transition_time_bounds:
+        CAM_01_GATE_NORTH: { min_seconds: 8.0, max_seconds: 45.0 }
+        CAM_04_LOADING_DOCK: { min_seconds: 6.0, max_seconds: 40.0 }
+
+    - id: CAM_04_LOADING_DOCK
+      name: South Loading & Logistics Dock
+      rtsp_url: rtsp://admin:pass@192.168.1.104:554/live/main
+      fps: 25
+      resolution: [1280, 720]
+      homography_matrix: [
+        [0.0030, -0.0001, -4.10],
+        [0.00002, 0.0039, -3.20],
+        [0.000001, 0.00002, 1.0]
+      ]
+      adjacent_cameras: [CAM_02_AISLE_WEST, CAM_03_REACTOR_BAY]
+      transition_time_bounds:
+        CAM_02_AISLE_WEST: { min_seconds: 5.0, max_seconds: 35.0 }
+        CAM_03_REACTOR_BAY: { min_seconds: 6.0, max_seconds: 40.0 }
 
 models:
   detection:
@@ -112,4 +147,3 @@ simulation:
       target_3d: [32.0, 13.0, 0.0]
       fov_deg: 75.0
       resolution: [1280, 720]
-

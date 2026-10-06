@@ -2,8 +2,11 @@
 YOLOv8 / YOLOv11 TensorRT & PyTorch Detection Wrapper for Industrial Assets and Personnel.
 """
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Tuple
 import numpy as np
+
+from src.config_loader import config
 
 
 @dataclass
@@ -18,24 +21,34 @@ class Detection:
 
 
 class FactoryObjectDetector:
-    def __init__(self, model_path: str = "yolov8x.pt", conf_threshold: float = 0.45, iou_threshold: float = 0.50):
-        self.model_path = model_path
-        self.conf_threshold = conf_threshold
-        self.iou_threshold = iou_threshold
-        self.class_names = {
-            0: "person",
-            1: "vessel_tank",
-            2: "forklift",
-            3: "pallet_jack"
-        }
+    def __init__(
+        self,
+        model_path: str = "yolov8x.pt",
+        conf_threshold: float = 0.45,
+        iou_threshold: float = 0.50
+    ):
+        # Load from config if available
+        det_cfg = config.get_detection()
+        self.model_path = Path(det_cfg.model_path) if det_cfg.model_path else Path(model_path)
+        self.conf_threshold = det_cfg.confidence_threshold
+        self.iou_threshold = det_cfg.nms_iou_threshold
+        self.class_names = det_cfg.classes
         self.model = None
+        self.use_tensorrt = False
 
     def load_model(self):
         """Loads YOLO PyTorch or TensorRT compiled engine."""
         try:
             from ultralytics import YOLO
-            self.model = YOLO(self.model_path)
-            print(f"[Detector] Loaded model from {self.model_path}")
+            
+            # Check if it's a TensorRT engine (.engine file)
+            if self.model_path.suffix == ".engine":
+                self.model = YOLO(str(self.model_path), task="detect")
+                self.use_tensorrt = True
+                print(f"[Detector] Loaded TensorRT engine from {self.model_path}")
+            else:
+                self.model = YOLO(str(self.model_path))
+                print(f"[Detector] Loaded PyTorch model from {self.model_path}")
         except Exception as e:
             print(f"[Detector] Warning: Could not initialize model engine: {e}")
 

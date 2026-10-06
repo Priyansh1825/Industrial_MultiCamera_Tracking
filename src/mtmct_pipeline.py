@@ -11,9 +11,11 @@ Coordinates:
 - Real-Time Spatial Safety Analytics & Zone Monitoring
 """
 import time
+from pathlib import Path
 from typing import Dict, List, Tuple
 import numpy as np
 
+from src.config_loader import config
 from src.detector.yolo_detector import Detection
 from src.reid.feature_extractor import ReIDFeatureExtractor
 from src.reid.gallery import ReIDGallery
@@ -31,46 +33,85 @@ class MTMCTPipelineEngine:
     def __init__(
         self,
         fps: int = 25,
-        plant_dimensions: Tuple[float, float] = (40.0, 25.0)
+        plant_dimensions: Tuple[float, float] = (40.0, 25.0),
+        config_path: str = None
     ):
-        self.fps = fps
-        self.plant_dimensions = plant_dimensions
+        # Load configuration
+        self.cfg = config.load(config_path) if config_path else config.get_config()
+
+        sys_cfg = self.cfg["system"]
+        sim_cfg = self.cfg["simulation"]
+        det_cfg = self.cfg["models"]["detection"]
+        trk_cfg = self.cfg["models"]["single_camera_tracking"]
+        reid_cfg = self.cfg["models"]["reid_feature_extraction"]
+        mtmct_cfg = self.cfg["mtmct_engine"]
+
+        self.fps = sim_cfg.get("fps", fps)
+        self.plant_dimensions = tuple(sim_cfg.get("plant_dimensions_meters", plant_dimensions))
 
         # 1. Multi-camera simulator or video ingestion server
-        self.simulator = MultiCameraSimulatorServer(fps=fps)
+        self.simulator = MultiCameraSimulatorServer(fps=self.fps)
 
-        # 2. Per-camera Single Camera Trackers (ByteTrack)
+        # 2. Per-camera Single Camera Trackers (ByteTrack) - use config thresholds
         self.trackers: Dict[str, BYTETracker] = {}
+        track_thresh = trk_cfg.get("track_thresh", 0.50)
+        match_thresh = trk_cfg.get("match_thresh", 0.80)
         for cam_id in self.simulator.cameras.keys():
-            self.trackers[cam_id] = BYTETracker(camera_id=cam_id, track_thresh=0.45, match_thresh=0.80)
+            self.trackers[cam_id] = BYTETracker(
+                camera_id=cam_id,
+                track_thresh=track_thresh,
+                match_thresh=match_thresh
+            )
 
-        # 3. Deep Re-ID feature extractor & central gallery
-        self.reid_extractor = ReIDFeatureExtractor(embedding_dim=128)
-        self.gallery = ReIDGallery(similarity_threshold=0.68)
+        # 3. Deep Re-ID feature extractor & central gallery - use config
+        reid_embedding_dim = reid_cfg.get("embedding_dimension", 512)
+        reid_sim_threshold = reid_cfg.get("similarity_threshold", 0.72)
+        self.reid_extractor = ReIDFeatureExtractor(embedding_dim=reid_embedding_dim)
+        self.gallery = ReIDGallery(similarity_threshold=reid_sim_threshold)
 
-        # 4. Spatio-Temporal Graph Optimizer
+        # 4. Spatio-Temporal Graph Optimizer - use config weights and transitions
+        camera_transitions = self._build_camera_transitions()
         self.graph_matcher = SpatioTemporalGraphMatcher(
             gallery=self.gallery,
-            max_velocity_mps=3.0,
-            appearance_weight=0.60,
-            spatial_weight=0.40,
-            global_matching_window_sec=120.0
+            max_velocity_mps=mtmct_cfg.get("max_velocity_mps", 2.5),
+            appearance_weight=mtmct_cfg.get("appearance_consistency_weight", 0.60),
+            spatial_weight=mtmct_cfg.get("spatial_consistency_weight", 0.40),
+            global_matching_window_sec=mtmct_cfg.get("global_matching_window_sec", 180.0),
+            camera_transitions=camera_transitions
         )
 
         # 5. Spatial Safety & Dwell Time Analytics Engine
-        self.spatial_analytics = SpatialAnalyticsEngine(plant_dimensions=plant_dimensions)
+        self.spatial_analytics = SpatialAnalyticsEngine(plant_dimensions=self.plant_dimensions)
 
-        # 6. Camera homography projectors
+        # 6. Camera homography projectors - load from config
         self.homographies: Dict[str, PlanarHomography] = {}
         self._initialize_camera_homographies()
 
         self.frame_index = 0
         self.is_running = False
 
+    def _build_camera_transitions(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
+        """Builds camera transition matrix from config."""
+        transitions = {}
+        for cam in self.cfg["camera_network"]["rtsp_streams"]:
+            cam_id = cam["id"]
+            bounds = cam.get("transition_time_bounds", {})
+            if bounds:
+                transitions[cam_id] = {}
+                for target_cam, tb in bounds.items():
+                    transitions[cam_id][target_cam] = (tb["min_seconds"], tb["max_seconds"])
+        return transitions
+
     def _initialize_camera_homographies(self):
-        """Constructs planar homography for each camera to map image foot contact points to floor meters."""
-        for cam_id, cam in self.simulator.cameras.items():
-            self.homographies[cam_id] = PlanarHomography(cam.H_img_to_world)
+        """Constructs planar homography for each camera from config matrices."""
+        for cam in self.cfg["camera_network"]["rtsp_streams"]:
+            cam_id = cam["id"]
+            matrix = cam.get("homography_matrix")
+            if matrix:
+                self.homographies[cam_id] = PlanarHomography(np.array(matrix, dtype=np.float64))
+            elif cam_id in self.simulator.cameras:
+                # Fallback to simulator's synthetic homography
+                self.homographies[cam_id] = PlanarHomography(self.simulator.cameras[cam_id].H_img_to_world)
 
     def step(self) -> Tuple[Dict[str, np.ndarray], Dict[str, GlobalTracklet], List[SafetyAlert]]:
         """
@@ -101,7 +142,9 @@ class MTMCTPipelineEngine:
                 # Floor projection via camera homography
                 foot_u = (x1 + x2) / 2.0
                 foot_v = y2
-                world_x, world_y = self.homographies[cam_id].image_to_world(foot_u, foot_v)
+                world_x, world_y = (0.0, 0.0)
+                if cam_id in self.homographies:
+                    world_x, world_y = self.homographies[cam_id].image_to_world(foot_u, foot_v)
 
                 # Fallback to 3D raycast ground truth if outside calibration bounds
                 out_of_bounds = (
