@@ -12,6 +12,7 @@ Coordinates:
 """
 import time
 from typing import Dict, List, Tuple
+import cv2
 import numpy as np
 
 from src.config_loader import config
@@ -180,7 +181,6 @@ class MTMCTPipelineEngine:
                 box = trk.tlbr
                 x1, y1, x2, y2 = [int(v) for v in box]
 
-                import cv2
                 # Color code by class
                 box_color = (0, 255, 120) if trk.class_name == "person" else (255, 160, 20)
                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), box_color, 2)
