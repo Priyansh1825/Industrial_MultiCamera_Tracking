@@ -177,7 +177,12 @@ class ReIDFeatureExtractor:
 
         return self.extract_fallback_embedding(crop)
 
-    def extract_batch(self, frame: np.ndarray, bboxes: List[Union[tuple, list]], class_names: Optional[List[str]] = None) -> List[np.ndarray]:
+    def extract_batch(
+        self,
+        frame: np.ndarray,
+        bboxes: List[Union[tuple, list]],
+        class_names: Optional[List[str]] = None
+    ) -> List[np.ndarray]:
         """Extracts embeddings for multiple bounding boxes from a single video frame."""
         h_frame, w_frame = frame.shape[:2]
         embeddings = []

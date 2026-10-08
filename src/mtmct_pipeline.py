@@ -11,7 +11,6 @@ Coordinates:
 - Real-Time Spatial Safety Analytics & Zone Monitoring
 """
 import time
-from pathlib import Path
 from typing import Dict, List, Tuple
 import numpy as np
 
@@ -39,9 +38,7 @@ class MTMCTPipelineEngine:
         # Load configuration
         self.cfg = config.load(config_path) if config_path else config.get_config()
 
-        sys_cfg = self.cfg["system"]
         sim_cfg = self.cfg["simulation"]
-        det_cfg = self.cfg["models"]["detection"]
         trk_cfg = self.cfg["models"]["single_camera_tracking"]
         reid_cfg = self.cfg["models"]["reid_feature_extraction"]
         mtmct_cfg = self.cfg["mtmct_engine"]

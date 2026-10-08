@@ -40,7 +40,7 @@ class FactoryObjectDetector:
         """Loads YOLO PyTorch or TensorRT compiled engine."""
         try:
             from ultralytics import YOLO
-            
+
             # Check if it's a TensorRT engine (.engine file)
             if self.model_path.suffix == ".engine":
                 self.model = YOLO(str(self.model_path), task="detect")
